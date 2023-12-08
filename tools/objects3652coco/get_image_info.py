@@ -43,7 +43,9 @@ def get_image_info(line, image_dir):
         print(line)
         return result
     try:
+
         image = read_image(file_path, format="BGR")
+
     except Exception as e:
         result["status"] = "TRUNCATED"
         print(e, line)

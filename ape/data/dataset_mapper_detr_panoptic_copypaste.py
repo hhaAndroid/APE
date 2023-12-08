@@ -177,6 +177,7 @@ class DatasetMapper_detr_panoptic_copypaste:
             phrases_filtered = []
             for x in dataset_dict["instances"].phrase_idxs.tolist():
                 phrases_filtered.append(phrases[x])
+                # 左右调换
             dataset_dict["instances"].phrases = mapper_utils.transform_phrases(
                 phrases_filtered, transforms
             )
@@ -270,6 +271,7 @@ class DatasetMapper_detr_panoptic_copypaste:
             and len(dataset_dict["annotations"]) > 0
             and "phrase" in dataset_dict["annotations"][0]
         ):
+            # 如果有数值，那么不能裁剪，否则数目不对
             disable_crop = disable_crop or mapper_utils.has_ordinal_num(
                 [anno["phrase"] for anno in dataset_dict["annotations"]]
             )
@@ -277,8 +279,9 @@ class DatasetMapper_detr_panoptic_copypaste:
             disable_crop = disable_crop or mapper_utils.has_ordinal_num(dataset_dict["expressions"])
 
         if self.augmentations_with_crop is None or disable_crop:
-            augmentations = self.augmentations
+            augmentations = self.augmentations  # 用第一套增强
         else:
+            # 用第二套增强
             if np.random.rand() > 0.5:
                 augmentations = self.augmentations
             else:
@@ -305,6 +308,7 @@ class DatasetMapper_detr_panoptic_copypaste:
             )
 
         if "expressions" in dataset_dict:
+            # 左右调换
             dataset_dict["expressions"] = mapper_utils.transform_expressions(
                 dataset_dict["expressions"], transforms
             )
@@ -327,7 +331,7 @@ class DatasetMapper_detr_panoptic_copypaste:
         if "instances" in dataset_dict and dataset_dict["instances"].has("phrases"):
             num_instances = len(dataset_dict["instances"])
 
-            if self.nms_thresh_phrase > 0:
+            if self.nms_thresh_phrase > 0:  # 这里是为了随机去除重复的phrase
                 boxes = dataset_dict["instances"].gt_boxes.tensor
                 scores = torch.rand(num_instances)
                 classes = torch.zeros(num_instances)
@@ -335,6 +339,7 @@ class DatasetMapper_detr_panoptic_copypaste:
             else:
                 keep = torch.randperm(num_instances)
 
+            # 可能一张图片里面 phrase 过多，最多保留 max_num_phrase 个
             if self.max_num_phrase > 0:
                 keep = keep[: self.max_num_phrase]
 

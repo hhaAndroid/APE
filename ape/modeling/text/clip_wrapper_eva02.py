@@ -87,12 +87,13 @@ class EVA02CLIP(nn.Module):
         if cache and tuple(text_list) in self.text_list_to_feature:
             return self.text_list_to_feature[tuple(text_list)]
 
+        # 如果 text 列表长度是 4，那么输出的 shape 是 [4, 77]
         text_token = self.tokenizer(text_list, context_length=77).to(self.device)
 
         max_batch_size = self.max_batch_size
         if self.device.type == "cpu" or torch.cuda.mem_get_info(self.device)[0] / 1024**3 < 5:
             max_batch_size = min(256, max_batch_size)
-        if len(text_token) > max_batch_size:
+        if len(text_token) > max_batch_size:  # 太长会 oom
             chunck_num = len(text_token) // max_batch_size + 1
             encoder_outputs = [
                 self.custom_encode_text(
@@ -130,6 +131,7 @@ class EVA02CLIP(nn.Module):
     def custom_encode_text(self, text, m, normalize: bool = False):
         cast_dtype = m.transformer.get_cast_dtype()
 
+        # 如果输入是 4 句话，那么 text 的 shape 是 [4, 77]，x 的 shape 是 [4, 77, 1280]
         x = m.token_embedding(text).to(cast_dtype)  # [batch_size, n_ctx, d_model]
 
         x = x + m.positional_embedding.to(cast_dtype)
@@ -138,8 +140,10 @@ class EVA02CLIP(nn.Module):
         x = x.permute(1, 0, 2)  # LND -> NLD
         x = m.ln_final(x)  # [batch_size, n_ctx, transformer.width]
 
+        # 4,77,1024
         xx = x @ m.text_projection
 
+        # 取结束处的文本即可 4,1024
         x = x[torch.arange(x.shape[0]), text.argmax(dim=-1)] @ m.text_projection
 
         return (

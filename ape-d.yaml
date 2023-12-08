@@ -1,0 +1,513 @@
+backbone:
+  _target_: ape.modeling.backbone.vit_eva_clip.SimpleFeaturePyramid
+  in_feature: ${.net.out_feature}
+  net:
+    _target_: ape.modeling.backbone.vit_eva_clip.ViT
+    depth: 24
+    drop_path_rate: 0.4
+    embed_dim: 1024
+    img_size: 1024
+    intp_freq: true
+    mlp_ratio: 2.6666666666666665
+    naiveswiglu: true
+    norm_layer: &id002 !!python/object/apply:functools.partial
+      args: [&id001 !!python/name:torch.nn.modules.normalization.LayerNorm '']
+      state: !!python/tuple
+      - *id001
+      - !!python/tuple []
+      - {eps: 1.0e-06}
+      - null
+    num_heads: 16
+    out_feature: last_feat
+    patch_size: 16
+    pretrain_img_size: 336
+    pretrain_use_cls_token: true
+    pt_hw_seq_len: 16
+    qkv_bias: true
+    residual_block_indexes: []
+    rope: true
+    subln: true
+    use_act_checkpoint: true
+    use_rel_pos: true
+    window_block_indexes: [0, 1, 3, 4, 6, 7, 9, 10, 12, 13, 15, 16, 18, 19, 21, 22]
+    window_size: 32
+    xattn: true
+  norm: LN
+  out_channels: 256
+  scale_factors: [4.0, 2.0, 1.0, 0.5]
+  square_pad: 1024
+  top_block: {_target_: detectron2.modeling.backbone.fpn.LastLevelMaxPool}
+criterion:
+  _target_: ape.modeling.ape_deta.DeformableCriterion
+  alpha: 0.25
+  gamma: 2.0
+  loss_class_type: focal_loss
+  losses: [class, boxes, masks]
+  matcher: {_target_: detrex.modeling.HungarianMatcher, alpha: 0.25, cost_bbox: 5.0, cost_class: 2.0, cost_class_type: focal_loss_cost, cost_giou: 2.0, gamma: 2.0}
+  matcher_stage1: {_target_: ape.modeling.ape_deta.Stage1Assigner, max_k: 4, t_high: 0.7, t_low: 0.3}
+  matcher_stage2: {_target_: ape.modeling.ape_deta.Stage2Assigner, max_k: 4, num_classes: '${..num_classes}', num_queries: '${model.model_vision.num_queries}'}
+  num_classes: 256
+  weight_dict: {loss_bbox: 5.0, loss_bbox_0: 5.0, loss_bbox_1: 5.0, loss_bbox_2: 5.0, loss_bbox_3: 5.0, loss_bbox_4: 5.0, loss_bbox_enc: 5.0, loss_class: 1.0, loss_class_0: 1.0, loss_class_1: 1.0, loss_class_2: 1.0, loss_class_3: 1.0, loss_class_4: 1.0, loss_class_enc: 1.0, loss_dice: 5, loss_dice_0: 5, loss_dice_1: 5, loss_dice_2: 5, loss_dice_3: 5, loss_dice_4: 5, loss_dice_enc: 5, loss_giou: 2.0, loss_giou_0: 2.0, loss_giou_1: 2.0, loss_giou_2: 2.0, loss_giou_3: 2.0, loss_giou_4: 2.0, loss_giou_enc: 2.0, loss_mask: 5, loss_mask_0: 5, loss_mask_1: 5, loss_mask_2: 5, loss_mask_3: 5, loss_mask_4: 5, loss_mask_enc: 5}
+dataloader:
+  evaluator: {_target_: detectron2.evaluation.LVISEvaluator, dataset_name: '${..test.dataset.names}', max_dets_per_image: 300}
+  evaluators:
+  - {_target_: detectron2.evaluation.SemSegEvaluator, dataset_name: coco_2017_val_panoptic_stuffonly}
+  - {_target_: detectron2.evaluation.LVISEvaluator, dataset_name: lvis_v1_minival, max_dets_per_image: 300}
+  - _target_: detectron2.evaluation.COCOEvaluator
+    dataset_name: objects365_minival_fixname
+    tasks: [bbox]
+  - _target_: detectron2.evaluation.COCOEvaluator
+    dataset_name: objects365_val_fixname
+    tasks: [bbox]
+  - {_target_: ape.evaluation.OIDEvaluator, dataset_name: openimages_v6_val_bbox}
+  - {_target_: ape.evaluation.RefCOCOEvaluator, dataset_name: refcoco-unc-val}
+  - {_target_: ape.evaluation.RefCOCOEvaluator, dataset_name: refcoco-unc-testA}
+  - {_target_: ape.evaluation.RefCOCOEvaluator, dataset_name: refcoco-unc-testB}
+  - {_target_: ape.evaluation.RefCOCOEvaluator, dataset_name: refcocoplus-unc-val}
+  - {_target_: ape.evaluation.RefCOCOEvaluator, dataset_name: refcocoplus-unc-testA}
+  - {_target_: ape.evaluation.RefCOCOEvaluator, dataset_name: refcocoplus-unc-testB}
+  - {_target_: ape.evaluation.RefCOCOEvaluator, dataset_name: refcocog-google-val}
+  - {_target_: ape.evaluation.RefCOCOEvaluator, dataset_name: refcocog-umd-val}
+  - {_target_: ape.evaluation.RefCOCOEvaluator, dataset_name: refcocog-umd-test}
+  test:
+    _target_: detectron2.data.build_detection_test_loader
+    dataset: {_target_: detectron2.data.get_detection_dataset_dicts, filter_empty: false, names: lvis_v1_val}
+    mapper:
+      _target_: detectron2.data.DatasetMapper
+      augmentations:
+      - {_target_: detectron2.data.transforms.ResizeShortestEdge, max_size: 1024, short_edge_length: 1024}
+      image_format: ${...train.mapper.image_format}
+      is_train: false
+    num_workers: 4
+  tests:
+  - _target_: detectron2.data.build_detection_test_loader
+    dataset: {_target_: detectron2.data.get_detection_dataset_dicts, filter_empty: false, names: coco_2017_val_panoptic_stuffonly}
+    mapper:
+      _target_: detectron2.data.DatasetMapper
+      augmentations:
+      - {_target_: detectron2.data.transforms.ResizeShortestEdge, max_size: 1024, short_edge_length: 1024}
+      image_format: ${....train.mapper.image_format}
+      is_train: false
+    num_workers: 4
+  - _target_: detectron2.data.build_detection_test_loader
+    dataset: {_target_: detectron2.data.get_detection_dataset_dicts, filter_empty: false, names: lvis_v1_minival}
+    mapper:
+      _target_: detectron2.data.DatasetMapper
+      augmentations:
+      - {_target_: detectron2.data.transforms.ResizeShortestEdge, max_size: 1024, short_edge_length: 1024}
+      image_format: ${....train.mapper.image_format}
+      is_train: false
+    num_workers: 4
+  - _target_: detectron2.data.build_detection_test_loader
+    dataset: {_target_: detectron2.data.get_detection_dataset_dicts, filter_empty: false, names: objects365_minival_fixname}
+    mapper:
+      _target_: detectron2.data.DatasetMapper
+      augmentations:
+      - {_target_: detectron2.data.transforms.ResizeShortestEdge, max_size: 1024, short_edge_length: 1024}
+      image_format: ${....train.mapper.image_format}
+      is_train: false
+    num_workers: 4
+  - _target_: detectron2.data.build_detection_test_loader
+    dataset: {_target_: detectron2.data.get_detection_dataset_dicts, filter_empty: false, names: objects365_val_fixname}
+    mapper:
+      _target_: detectron2.data.DatasetMapper
+      augmentations:
+      - {_target_: detectron2.data.transforms.ResizeShortestEdge, max_size: 1024, short_edge_length: 1024}
+      image_format: ${....train.mapper.image_format}
+      is_train: false
+    num_workers: 4
+  - _target_: detectron2.data.build_detection_test_loader
+    dataset: {_target_: detectron2.data.get_detection_dataset_dicts, filter_empty: false, names: openimages_v6_val_bbox}
+    mapper:
+      _target_: detectron2.data.DatasetMapper
+      augmentations:
+      - {_target_: detectron2.data.transforms.ResizeShortestEdge, max_size: 1024, short_edge_length: 1024}
+      image_format: ${....train.mapper.image_format}
+      is_train: false
+    num_workers: 4
+  - _target_: detectron2.data.build_detection_test_loader
+    dataset: {_target_: detectron2.data.get_detection_dataset_dicts, filter_empty: false, names: refcoco-unc-val}
+    mapper:
+      _target_: detectron2.data.DatasetMapper
+      augmentations:
+      - {_target_: detectron2.data.transforms.ResizeShortestEdge, max_size: 1024, short_edge_length: 1024}
+      image_format: ${....train.mapper.image_format}
+      is_train: false
+    num_workers: 4
+  - _target_: detectron2.data.build_detection_test_loader
+    dataset: {_target_: detectron2.data.get_detection_dataset_dicts, filter_empty: false, names: refcoco-unc-testA}
+    mapper:
+      _target_: detectron2.data.DatasetMapper
+      augmentations:
+      - {_target_: detectron2.data.transforms.ResizeShortestEdge, max_size: 1024, short_edge_length: 1024}
+      image_format: ${....train.mapper.image_format}
+      is_train: false
+    num_workers: 4
+  - _target_: detectron2.data.build_detection_test_loader
+    dataset: {_target_: detectron2.data.get_detection_dataset_dicts, filter_empty: false, names: refcoco-unc-testB}
+    mapper:
+      _target_: detectron2.data.DatasetMapper
+      augmentations:
+      - {_target_: detectron2.data.transforms.ResizeShortestEdge, max_size: 1024, short_edge_length: 1024}
+      image_format: ${....train.mapper.image_format}
+      is_train: false
+    num_workers: 4
+  - _target_: detectron2.data.build_detection_test_loader
+    dataset: {_target_: detectron2.data.get_detection_dataset_dicts, filter_empty: false, names: refcocoplus-unc-val}
+    mapper:
+      _target_: detectron2.data.DatasetMapper
+      augmentations:
+      - {_target_: detectron2.data.transforms.ResizeShortestEdge, max_size: 1024, short_edge_length: 1024}
+      image_format: ${....train.mapper.image_format}
+      is_train: false
+    num_workers: 4
+  - _target_: detectron2.data.build_detection_test_loader
+    dataset: {_target_: detectron2.data.get_detection_dataset_dicts, filter_empty: false, names: refcocoplus-unc-testA}
+    mapper:
+      _target_: detectron2.data.DatasetMapper
+      augmentations:
+      - {_target_: detectron2.data.transforms.ResizeShortestEdge, max_size: 1024, short_edge_length: 1024}
+      image_format: ${....train.mapper.image_format}
+      is_train: false
+    num_workers: 4
+  - _target_: detectron2.data.build_detection_test_loader
+    dataset: {_target_: detectron2.data.get_detection_dataset_dicts, filter_empty: false, names: refcocoplus-unc-testB}
+    mapper:
+      _target_: detectron2.data.DatasetMapper
+      augmentations:
+      - {_target_: detectron2.data.transforms.ResizeShortestEdge, max_size: 1024, short_edge_length: 1024}
+      image_format: ${....train.mapper.image_format}
+      is_train: false
+    num_workers: 4
+  - _target_: detectron2.data.build_detection_test_loader
+    dataset: {_target_: detectron2.data.get_detection_dataset_dicts, filter_empty: false, names: refcocog-google-val}
+    mapper:
+      _target_: detectron2.data.DatasetMapper
+      augmentations:
+      - {_target_: detectron2.data.transforms.ResizeShortestEdge, max_size: 1024, short_edge_length: 1024}
+      image_format: ${....train.mapper.image_format}
+      is_train: false
+    num_workers: 4
+  - _target_: detectron2.data.build_detection_test_loader
+    dataset: {_target_: detectron2.data.get_detection_dataset_dicts, filter_empty: false, names: refcocog-umd-val}
+    mapper:
+      _target_: detectron2.data.DatasetMapper
+      augmentations:
+      - {_target_: detectron2.data.transforms.ResizeShortestEdge, max_size: 1024, short_edge_length: 1024}
+      image_format: ${....train.mapper.image_format}
+      is_train: false
+    num_workers: 4
+  - _target_: detectron2.data.build_detection_test_loader
+    dataset: {_target_: detectron2.data.get_detection_dataset_dicts, filter_empty: false, names: refcocog-umd-test}
+    mapper:
+      _target_: detectron2.data.DatasetMapper
+      augmentations:
+      - {_target_: detectron2.data.transforms.ResizeShortestEdge, max_size: 1024, short_edge_length: 1024}
+      image_format: ${....train.mapper.image_format}
+      is_train: false
+    num_workers: 4
+  train:
+    _target_: ape.build_detection_train_loader_multi_dataset_copypaste
+    aspect_ratio_grouping: true
+    dataset:
+      _target_: ape.get_detection_dataset_dicts_multi_dataset_copypaste
+      copypastes: [true, false, false, false, false, false, false, false, false]
+      filter_emptys: [true, true, true, true, false, true, true, true, true]
+      names: [lvis_v1_train+coco_panoptic_separated, objects365_train_fixname, openimages_v6_train_bbox_nogroup, visualgenome_77962_box_and_region, sa1b_6m, refcoco-mixed_group-by-image, gqa_region_train, phrasecut_train, flickr30k_separateGT_train]
+      reduce_memory: true
+      reduce_memory_size: 1000000.0
+    dataset_bg:
+      _target_: detectron2.data.get_detection_dataset_dicts
+      names: [lvis_v1_train+coco_panoptic_separated]
+    mapper:
+      _target_: ape.DatasetMapper_detr_panoptic_copypaste
+      augmentations:
+      - {_target_: detectron2.data.transforms.RandomFlip, horizontal: true}
+      - {_target_: detectron2.data.transforms.ResizeScale, max_scale: 1.0, min_scale: 0.1, target_height: 1024, target_width: 1024}
+      - _target_: detectron2.data.transforms.FixedSizeCrop
+        crop_size: [1024, 1024]
+        pad: false
+      augmentations_with_crop:
+      - {_target_: detectron2.data.transforms.RandomFlip, horizontal: true}
+      - {_target_: detectron2.data.transforms.ResizeScale, max_scale: 2.0, min_scale: 0.1, target_height: 1024, target_width: 1024}
+      - _target_: detectron2.data.transforms.FixedSizeCrop
+        crop_size: [1024, 1024]
+        pad: false
+      dataset_names: ${..dataset.names}
+      ignore_label: 255
+      image_format: RGB
+      instance_mask_format: bitmask
+      is_train: true
+      max_num_phrase: 128
+      nms_thresh_phrase: 0.6
+      output_dir: output/configs/LVISCOCOCOCOSTUFF_O365_OID_VGR_SA1B_REFCOCO_GQA_PhraseCut_Flickr30k/ape_deta/ape_deta_vitl_eva02_clip_vlf_lsj1024_cp_16x4_1080k
+      recompute_boxes: true
+      stuff_classes_decomposition: true
+      stuff_classes_offset: 1203
+      use_instance_mask: true
+      vis_period: 12800
+    num_datasets: 9
+    num_workers: 0
+    sampler: !!python/name:detectron2._cfg_loadere532.lviscocococostuff_o365_oid_vgr_sa1b_refcoco_group_by_image_gqa_phrasecut_flickr30k_panoptic_lsj1024_cp.py.%3Clambda%3E ''
+    sampler_bg: !!python/name:detectron2._cfg_loadere532.lviscocococostuff_o365_oid_vgr_sa1b_refcoco_group_by_image_gqa_phrasecut_flickr30k_panoptic_lsj1024_cp.py.%3Clambda%3E ''
+    total_batch_size: 16
+    total_batch_size_list: [16, 16, 16, 16, 16, 16, 16, 16, 16]
+lr_multiplier:
+  _target_: detectron2.solver.WarmupParamScheduler
+  scheduler:
+    _target_: fvcore.common.param_scheduler.MultiStepParamScheduler
+    milestones: [900000]
+    num_updates: 1080000
+    values: [1.0, 0.1]
+  warmup_factor: 0.001
+  warmup_length: 0.007407407407407408
+  warmup_method: linear
+model:
+  _target_: ape.modeling.ape_deta.SomeThing
+  model_language: {_target_: ape.modeling.text.EVA02CLIP, cache_dir: models/QuanSun/EVA-CLIP/EVA02_CLIP_E_psz14_plus_s9B.pt, clip_model: EVA02-CLIP-bigE-14-plus, dtype: float16}
+  model_vision:
+    _target_: ape.modeling.ape_deta.DeformableDETRSegmVL
+    as_two_stage: true
+    aux_loss: true
+    backbone:
+      _target_: ape.modeling.backbone.vit_eva_clip.SimpleFeaturePyramid
+      in_feature: ${.net.out_feature}
+      net:
+        _target_: ape.modeling.backbone.vit_eva_clip.ViT
+        depth: 24
+        drop_path_rate: 0.4
+        embed_dim: 1024
+        img_size: 1024
+        intp_freq: true
+        mlp_ratio: 2.6666666666666665
+        naiveswiglu: true
+        norm_layer: *id002
+        num_heads: 16
+        out_feature: last_feat
+        patch_size: 16
+        pretrain_img_size: 336
+        pretrain_use_cls_token: true
+        pt_hw_seq_len: 16
+        qkv_bias: true
+        residual_block_indexes: []
+        rope: true
+        subln: true
+        use_act_checkpoint: true
+        use_rel_pos: true
+        window_block_indexes: [0, 1, 3, 4, 6, 7, 9, 10, 12, 13, 15, 16, 18, 19, 21, 22]
+        window_size: 32
+        xattn: true
+      norm: LN
+      out_channels: 256
+      scale_factors: [4.0, 2.0, 1.0, 0.5]
+      square_pad: 1024
+      top_block: {_target_: detectron2.modeling.backbone.fpn.LastLevelMaxPool}
+    criterion:
+    - _target_: ape.modeling.ape_deta.DeformableCriterion
+      alpha: 0.25
+      fed_loss_num_classes: 50
+      fed_loss_pad_type: cat
+      gamma: 2.0
+      get_fed_loss_cls_weights: !!python/name:None.%3Clambda%3E ''
+      loss_class_type: focal_loss
+      losses: [class, boxes, masks]
+      matcher: {_target_: detrex.modeling.HungarianMatcher, alpha: 0.25, cost_bbox: 5.0, cost_class: 2.0, cost_class_type: focal_loss_cost, cost_giou: 2.0, gamma: 2.0}
+      matcher_stage1: {_target_: ape.modeling.ape_deta.Stage1Assigner, max_k: 4, t_high: 0.7, t_low: 0.3}
+      matcher_stage2: {_target_: ape.modeling.ape_deta.Stage2Assigner, max_k: 4, num_classes: '${..num_classes}', num_queries: '${model.model_vision.num_queries}'}
+      num_classes: 1256
+      use_fed_loss: true
+      weight_dict: {loss_bbox: 5.0, loss_bbox_0: 5.0, loss_bbox_1: 5.0, loss_bbox_2: 5.0, loss_bbox_3: 5.0, loss_bbox_4: 5.0, loss_bbox_enc: 5.0, loss_class: 1.0, loss_class_0: 1.0, loss_class_1: 1.0, loss_class_2: 1.0, loss_class_3: 1.0, loss_class_4: 1.0, loss_class_enc: 1.0, loss_dice: 5, loss_dice_0: 5, loss_dice_1: 5, loss_dice_2: 5, loss_dice_3: 5, loss_dice_4: 5, loss_dice_enc: 5, loss_giou: 2.0, loss_giou_0: 2.0, loss_giou_1: 2.0, loss_giou_2: 2.0, loss_giou_3: 2.0, loss_giou_4: 2.0, loss_giou_enc: 2.0, loss_mask: 5, loss_mask_0: 5, loss_mask_1: 5, loss_mask_2: 5, loss_mask_3: 5, loss_mask_4: 5, loss_mask_enc: 5}
+    - _target_: ape.modeling.ape_deta.DeformableCriterion
+      alpha: 0.25
+      gamma: 2.0
+      loss_class_type: focal_loss
+      losses: [class, boxes, masks]
+      matcher: {_target_: detrex.modeling.HungarianMatcher, alpha: 0.25, cost_bbox: 5.0, cost_class: 2.0, cost_class_type: focal_loss_cost, cost_giou: 2.0, gamma: 2.0}
+      matcher_stage1: {_target_: ape.modeling.ape_deta.Stage1Assigner, max_k: 4, t_high: 0.7, t_low: 0.3}
+      matcher_stage2: {_target_: ape.modeling.ape_deta.Stage2Assigner, max_k: 4, num_classes: '${..num_classes}', num_queries: '${model.model_vision.num_queries}'}
+      num_classes: 365
+      weight_dict: {loss_bbox: 5.0, loss_bbox_0: 5.0, loss_bbox_1: 5.0, loss_bbox_2: 5.0, loss_bbox_3: 5.0, loss_bbox_4: 5.0, loss_bbox_enc: 5.0, loss_class: 1.0, loss_class_0: 1.0, loss_class_1: 1.0, loss_class_2: 1.0, loss_class_3: 1.0, loss_class_4: 1.0, loss_class_enc: 1.0, loss_dice: 5, loss_dice_0: 5, loss_dice_1: 5, loss_dice_2: 5, loss_dice_3: 5, loss_dice_4: 5, loss_dice_enc: 5, loss_giou: 2.0, loss_giou_0: 2.0, loss_giou_1: 2.0, loss_giou_2: 2.0, loss_giou_3: 2.0, loss_giou_4: 2.0, loss_giou_enc: 2.0, loss_mask: 5, loss_mask_0: 5, loss_mask_1: 5, loss_mask_2: 5, loss_mask_3: 5, loss_mask_4: 5, loss_mask_enc: 5}
+    - _target_: ape.modeling.ape_deta.DeformableCriterion
+      alpha: 0.25
+      fed_loss_num_classes: 50
+      fed_loss_pad_type: cat
+      gamma: 2.0
+      get_fed_loss_cls_weights: !!python/name:None.%3Clambda%3E ''
+      loss_class_type: focal_loss
+      losses: [class, boxes, masks]
+      matcher: {_target_: detrex.modeling.HungarianMatcher, alpha: 0.25, cost_bbox: 5.0, cost_class: 2.0, cost_class_type: focal_loss_cost, cost_giou: 2.0, gamma: 2.0}
+      matcher_stage1: {_target_: ape.modeling.ape_deta.Stage1Assigner, max_k: 4, t_high: 0.7, t_low: 0.3}
+      matcher_stage2: {_target_: ape.modeling.ape_deta.Stage2Assigner, max_k: 4, num_classes: '${..num_classes}', num_queries: '${model.model_vision.num_queries}'}
+      num_classes: 601
+      use_fed_loss: true
+      weight_dict: {loss_bbox: 5.0, loss_bbox_0: 5.0, loss_bbox_1: 5.0, loss_bbox_2: 5.0, loss_bbox_3: 5.0, loss_bbox_4: 5.0, loss_bbox_enc: 5.0, loss_class: 1.0, loss_class_0: 1.0, loss_class_1: 1.0, loss_class_2: 1.0, loss_class_3: 1.0, loss_class_4: 1.0, loss_class_enc: 1.0, loss_dice: 5, loss_dice_0: 5, loss_dice_1: 5, loss_dice_2: 5, loss_dice_3: 5, loss_dice_4: 5, loss_dice_enc: 5, loss_giou: 2.0, loss_giou_0: 2.0, loss_giou_1: 2.0, loss_giou_2: 2.0, loss_giou_3: 2.0, loss_giou_4: 2.0, loss_giou_enc: 2.0, loss_mask: 5, loss_mask_0: 5, loss_mask_1: 5, loss_mask_2: 5, loss_mask_3: 5, loss_mask_4: 5, loss_mask_enc: 5}
+    - _target_: ape.modeling.ape_deta.DeformableCriterion
+      alpha: 0.25
+      gamma: 2.0
+      loss_class_type: focal_loss
+      losses: [class, boxes, masks]
+      matcher: {_target_: detrex.modeling.HungarianMatcher, alpha: 0.25, cost_bbox: 5.0, cost_class: 2.0, cost_class_type: focal_loss_cost, cost_giou: 2.0, gamma: 2.0}
+      matcher_stage1: {_target_: ape.modeling.ape_deta.Stage1Assigner, max_k: 4, t_high: 0.7, t_low: 0.3}
+      matcher_stage2: {_target_: ape.modeling.ape_deta.Stage2Assigner, max_k: 4, num_classes: '${..num_classes}', num_queries: '${model.model_vision.num_queries}'}
+      num_classes: 256
+      weight_dict: {loss_bbox: 0.0, loss_bbox_0: 0.0, loss_bbox_1: 0.0, loss_bbox_2: 0.0, loss_bbox_3: 0.0, loss_bbox_4: 0.0, loss_bbox_enc: 0.0, loss_class: 1.0, loss_class_0: 1.0, loss_class_1: 1.0, loss_class_2: 1.0, loss_class_3: 1.0, loss_class_4: 1.0, loss_class_enc: 0.0, loss_dice: 0.0, loss_dice_0: 0.0, loss_dice_1: 0.0, loss_dice_2: 0.0, loss_dice_3: 0.0, loss_dice_4: 0.0, loss_dice_enc: 0.0, loss_giou: 0.0, loss_giou_0: 0.0, loss_giou_1: 0.0, loss_giou_2: 0.0, loss_giou_3: 0.0, loss_giou_4: 0.0, loss_giou_enc: 0.0, loss_mask: 0.0, loss_mask_0: 0.0, loss_mask_1: 0.0, loss_mask_2: 0.0, loss_mask_3: 0.0, loss_mask_4: 0.0, loss_mask_enc: 0.0}
+    - _target_: ape.modeling.ape_deta.DeformableCriterion
+      alpha: 0.25
+      gamma: 2.0
+      loss_class_type: focal_loss
+      losses: [class, boxes, masks]
+      matcher: {_target_: detrex.modeling.HungarianMatcher, alpha: 0.25, cost_bbox: 5.0, cost_class: 2.0, cost_class_type: focal_loss_cost, cost_giou: 2.0, gamma: 2.0}
+      matcher_stage1: {_target_: ape.modeling.ape_deta.Stage1Assigner, max_k: 4, t_high: 0.7, t_low: 0.3}
+      matcher_stage2: {_target_: ape.modeling.ape_deta.Stage2Assigner, max_k: 4, num_classes: '${..num_classes}', num_queries: '${model.model_vision.num_queries}'}
+      num_classes: 1
+      weight_dict: {loss_bbox: 5.0, loss_bbox_0: 5.0, loss_bbox_1: 5.0, loss_bbox_2: 5.0, loss_bbox_3: 5.0, loss_bbox_4: 5.0, loss_bbox_enc: 5.0, loss_class: 0.0, loss_class_0: 0.0, loss_class_1: 0.0, loss_class_2: 0.0, loss_class_3: 0.0, loss_class_4: 0.0, loss_class_enc: 1.0, loss_dice: 5, loss_dice_0: 5, loss_dice_1: 5, loss_dice_2: 5, loss_dice_3: 5, loss_dice_4: 5, loss_dice_enc: 5, loss_giou: 2.0, loss_giou_0: 2.0, loss_giou_1: 2.0, loss_giou_2: 2.0, loss_giou_3: 2.0, loss_giou_4: 2.0, loss_giou_enc: 2.0, loss_mask: 5, loss_mask_0: 5, loss_mask_1: 5, loss_mask_2: 5, loss_mask_3: 5, loss_mask_4: 5, loss_mask_enc: 5}
+    - _target_: ape.modeling.ape_deta.DeformableCriterion
+      alpha: 0.25
+      gamma: 2.0
+      loss_class_type: focal_loss
+      losses: [class, boxes, masks]
+      matcher: {_target_: detrex.modeling.HungarianMatcher, alpha: 0.25, cost_bbox: 5.0, cost_class: 2.0, cost_class_type: focal_loss_cost, cost_giou: 2.0, gamma: 2.0}
+      matcher_stage1: {_target_: ape.modeling.ape_deta.Stage1Assigner, max_k: 4, t_high: 0.7, t_low: 0.3}
+      matcher_stage2: {_target_: ape.modeling.ape_deta.Stage2Assigner, max_k: 4, num_classes: '${..num_classes}', num_queries: '${model.model_vision.num_queries}'}
+      num_classes: 256
+      weight_dict: {loss_bbox: 5.0, loss_bbox_0: 5.0, loss_bbox_1: 5.0, loss_bbox_2: 5.0, loss_bbox_3: 5.0, loss_bbox_4: 5.0, loss_bbox_enc: 5.0, loss_class: 1.0, loss_class_0: 1.0, loss_class_1: 1.0, loss_class_2: 1.0, loss_class_3: 1.0, loss_class_4: 1.0, loss_class_enc: 0.0, loss_dice: 5, loss_dice_0: 5, loss_dice_1: 5, loss_dice_2: 5, loss_dice_3: 5, loss_dice_4: 5, loss_dice_enc: 5, loss_giou: 2.0, loss_giou_0: 2.0, loss_giou_1: 2.0, loss_giou_2: 2.0, loss_giou_3: 2.0, loss_giou_4: 2.0, loss_giou_enc: 2.0, loss_mask: 5, loss_mask_0: 5, loss_mask_1: 5, loss_mask_2: 5, loss_mask_3: 5, loss_mask_4: 5, loss_mask_enc: 5}
+    - _target_: ape.modeling.ape_deta.DeformableCriterion
+      alpha: 0.25
+      gamma: 2.0
+      loss_class_type: focal_loss
+      losses: [class, boxes, masks]
+      matcher: {_target_: detrex.modeling.HungarianMatcher, alpha: 0.25, cost_bbox: 5.0, cost_class: 2.0, cost_class_type: focal_loss_cost, cost_giou: 2.0, gamma: 2.0}
+      matcher_stage1: {_target_: ape.modeling.ape_deta.Stage1Assigner, max_k: 4, t_high: 0.7, t_low: 0.3}
+      matcher_stage2: {_target_: ape.modeling.ape_deta.Stage2Assigner, max_k: 4, num_classes: '${..num_classes}', num_queries: '${model.model_vision.num_queries}'}
+      num_classes: 256
+      weight_dict: {loss_bbox: 0.0, loss_bbox_0: 0.0, loss_bbox_1: 0.0, loss_bbox_2: 0.0, loss_bbox_3: 0.0, loss_bbox_4: 0.0, loss_bbox_enc: 0.0, loss_class: 1.0, loss_class_0: 1.0, loss_class_1: 1.0, loss_class_2: 1.0, loss_class_3: 1.0, loss_class_4: 1.0, loss_class_enc: 0.0, loss_dice: 0.0, loss_dice_0: 0.0, loss_dice_1: 0.0, loss_dice_2: 0.0, loss_dice_3: 0.0, loss_dice_4: 0.0, loss_dice_enc: 0.0, loss_giou: 0.0, loss_giou_0: 0.0, loss_giou_1: 0.0, loss_giou_2: 0.0, loss_giou_3: 0.0, loss_giou_4: 0.0, loss_giou_enc: 0.0, loss_mask: 0.0, loss_mask_0: 0.0, loss_mask_1: 0.0, loss_mask_2: 0.0, loss_mask_3: 0.0, loss_mask_4: 0.0, loss_mask_enc: 0.0}
+    - _target_: ape.modeling.ape_deta.DeformableCriterion
+      alpha: 0.25
+      gamma: 2.0
+      loss_class_type: focal_loss
+      losses: [class, boxes, masks]
+      matcher: {_target_: detrex.modeling.HungarianMatcher, alpha: 0.25, cost_bbox: 5.0, cost_class: 2.0, cost_class_type: focal_loss_cost, cost_giou: 2.0, gamma: 2.0}
+      matcher_stage1: {_target_: ape.modeling.ape_deta.Stage1Assigner, max_k: 4, t_high: 0.7, t_low: 0.3}
+      matcher_stage2: {_target_: ape.modeling.ape_deta.Stage2Assigner, max_k: 4, num_classes: '${..num_classes}', num_queries: '${model.model_vision.num_queries}'}
+      num_classes: 256
+      weight_dict: {loss_bbox: 0.0, loss_bbox_0: 0.0, loss_bbox_1: 0.0, loss_bbox_2: 0.0, loss_bbox_3: 0.0, loss_bbox_4: 0.0, loss_bbox_enc: 0.0, loss_class: 1.0, loss_class_0: 1.0, loss_class_1: 1.0, loss_class_2: 1.0, loss_class_3: 1.0, loss_class_4: 1.0, loss_class_enc: 0.0, loss_dice: 0.0, loss_dice_0: 0.0, loss_dice_1: 0.0, loss_dice_2: 0.0, loss_dice_3: 0.0, loss_dice_4: 0.0, loss_dice_enc: 0.0, loss_giou: 0.0, loss_giou_0: 0.0, loss_giou_1: 0.0, loss_giou_2: 0.0, loss_giou_3: 0.0, loss_giou_4: 0.0, loss_giou_enc: 0.0, loss_mask: 0.0, loss_mask_0: 0.0, loss_mask_1: 0.0, loss_mask_2: 0.0, loss_mask_3: 0.0, loss_mask_4: 0.0, loss_mask_enc: 0.0}
+    - _target_: ape.modeling.ape_deta.DeformableCriterion
+      alpha: 0.25
+      gamma: 2.0
+      loss_class_type: focal_loss
+      losses: [class, boxes, masks]
+      matcher: {_target_: detrex.modeling.HungarianMatcher, alpha: 0.25, cost_bbox: 5.0, cost_class: 2.0, cost_class_type: focal_loss_cost, cost_giou: 2.0, gamma: 2.0}
+      matcher_stage1: {_target_: ape.modeling.ape_deta.Stage1Assigner, max_k: 4, t_high: 0.7, t_low: 0.3}
+      matcher_stage2: {_target_: ape.modeling.ape_deta.Stage2Assigner, max_k: 4, num_classes: '${..num_classes}', num_queries: '${model.model_vision.num_queries}'}
+      num_classes: 256
+      weight_dict: {loss_bbox: 0.0, loss_bbox_0: 0.0, loss_bbox_1: 0.0, loss_bbox_2: 0.0, loss_bbox_3: 0.0, loss_bbox_4: 0.0, loss_bbox_enc: 0.0, loss_class: 1.0, loss_class_0: 1.0, loss_class_1: 1.0, loss_class_2: 1.0, loss_class_3: 1.0, loss_class_4: 1.0, loss_class_enc: 0.0, loss_dice: 0.0, loss_dice_0: 0.0, loss_dice_1: 0.0, loss_dice_2: 0.0, loss_dice_3: 0.0, loss_dice_4: 0.0, loss_dice_enc: 0.0, loss_giou: 0.0, loss_giou_0: 0.0, loss_giou_1: 0.0, loss_giou_2: 0.0, loss_giou_3: 0.0, loss_giou_4: 0.0, loss_giou_enc: 0.0, loss_mask: 0.0, loss_mask_0: 0.0, loss_mask_1: 0.0, loss_mask_2: 0.0, loss_mask_3: 0.0, loss_mask_4: 0.0, loss_mask_enc: 0.0}
+    - _target_: ape.modeling.ape_deta.DeformableCriterion
+      alpha: 0.25
+      gamma: 2.0
+      loss_class_type: focal_loss
+      losses: [class, boxes, masks]
+      matcher: {_target_: detrex.modeling.HungarianMatcher, alpha: 0.25, cost_bbox: 5.0, cost_class: 2.0, cost_class_type: focal_loss_cost, cost_giou: 2.0, gamma: 2.0}
+      matcher_stage1: {_target_: ape.modeling.ape_deta.Stage1Assigner, max_k: 4, t_high: 0.7, t_low: 0.3}
+      matcher_stage2: {_target_: ape.modeling.ape_deta.Stage2Assigner, max_k: 4, num_classes: '${..num_classes}', num_queries: '${model.model_vision.num_queries}'}
+      num_classes: 256
+      weight_dict: {loss_bbox: 5.0, loss_bbox_0: 5.0, loss_bbox_1: 5.0, loss_bbox_2: 5.0, loss_bbox_3: 5.0, loss_bbox_4: 5.0, loss_bbox_enc: 5.0, loss_class: 1.0, loss_class_0: 1.0, loss_class_1: 1.0, loss_class_2: 1.0, loss_class_3: 1.0, loss_class_4: 1.0, loss_class_enc: 1.0, loss_dice: 5, loss_dice_0: 5, loss_dice_1: 5, loss_dice_2: 5, loss_dice_3: 5, loss_dice_4: 5, loss_dice_enc: 5, loss_giou: 2.0, loss_giou_0: 2.0, loss_giou_1: 2.0, loss_giou_2: 2.0, loss_giou_3: 2.0, loss_giou_4: 2.0, loss_giou_enc: 2.0, loss_mask: 5, loss_mask_0: 5, loss_mask_1: 5, loss_mask_2: 5, loss_mask_3: 5, loss_mask_4: 5, loss_mask_enc: 5}
+    dataset_metas: [lvis_v1_train+coco_panoptic_separated, objects365_train_fixname, openimages_v6_train_bbox_nogroup, visualgenome_77962_box_and_region, sa1b_6m, refcoco-mixed_group-by-image, gqa_region_train, phrasecut_train, flickr30k_separateGT_train, refcoco-mixed]
+    dataset_names: [lvis+stuffonly, objects365, openimages, vgregion, sa1b, refcoco-mixed_group-by-image, gqa, phrasecut, flickr30k, refcoco]
+    dataset_prompts: [name, name, name, phrase, name, phrase, phrase, phrase, phrase, expression]
+    embed_dim: 256
+    embed_dim_language: 1024
+    expression_cumulative_gt_class: true
+    input_format: RGB
+    input_shapes:
+      p2: !!python/object:detectron2.layers.shape_spec.ShapeSpec {channels: 256, height: null, stride: null, width: null}
+      p3: !!python/object:detectron2.layers.shape_spec.ShapeSpec {channels: 256, height: null, stride: null, width: null}
+      p4: !!python/object:detectron2.layers.shape_spec.ShapeSpec {channels: 256, height: null, stride: null, width: null}
+      p5: !!python/object:detectron2.layers.shape_spec.ShapeSpec {channels: 256, height: null, stride: null, width: null}
+      p6: !!python/object:detectron2.layers.shape_spec.ShapeSpec {channels: 256, height: null, stride: null, width: null}
+    instance_on: true
+    mask_encode_level: 0
+    mask_in_features: [p2]
+    name_prompt_fusion_type: zero
+    neck:
+      _target_: detrex.modeling.ChannelMapper
+      in_features: [p2, p3, p4, p5, p6]
+      input_shapes:
+        p2: !!python/object:detectron2.layers.shape_spec.ShapeSpec {channels: 256, height: null, stride: null, width: null}
+        p3: !!python/object:detectron2.layers.shape_spec.ShapeSpec {channels: 256, height: null, stride: null, width: null}
+        p4: !!python/object:detectron2.layers.shape_spec.ShapeSpec {channels: 256, height: null, stride: null, width: null}
+        p5: !!python/object:detectron2.layers.shape_spec.ShapeSpec {channels: 256, height: null, stride: null, width: null}
+        p6: !!python/object:detectron2.layers.shape_spec.ShapeSpec {channels: 256, height: null, stride: null, width: null}
+      kernel_size: 1
+      norm_layer: {_target_: torch.nn.GroupNorm, num_channels: 256, num_groups: 32}
+      num_outs: 5
+      out_channels: 256
+    num_classes: 1256
+    num_queries: 900
+    output_dir: output/configs/LVISCOCOCOCOSTUFF_O365_OID_VGR_SA1B_REFCOCO_GQA_PhraseCut_Flickr30k/ape_deta/ape_deta_vitl_eva02_clip_vlf_lsj1024_cp_16x4_1080k
+    panoptic_on: false
+    pixel_mean: [123.675, 116.28, 103.53]
+    pixel_std: [58.395, 57.12, 57.375]
+    position_embedding: {_target_: detrex.layers.PositionEmbeddingSine, normalize: true, num_pos_feats: 128, offset: -0.5, temperature: 10000}
+    select_box_nums_for_evaluation: 500
+    semantic_on: true
+    stuff_dataset_learn_thing: false
+    stuff_prob_thing: 0.9
+    test_score_thresh: 0.2
+    text_feature_bank: true
+    text_feature_bank_reset: true
+    text_feature_batch_repeat: true
+    text_feature_reduce_before_fusion: true
+    transformer:
+      _target_: ape.modeling.ape_deta.DeformableDetrTransformerVL
+      as_two_stage: ${..as_two_stage}
+      assign_first_stage: true
+      decoder: {_target_: ape.modeling.ape_deta.DeformableDetrTransformerDecoderVL, attn_dropout: 0.0, embed_dim: 256, feedforward_dim: 2048, ffn_dropout: 0.0, num_feature_levels: '${..num_feature_levels}', num_heads: 8, num_layers: 6, return_intermediate: true}
+      encoder:
+        _target_: ape.modeling.ape_deta.DeformableDetrTransformerEncoderVL
+        attn_dropout: 0.0
+        embed_dim: 256
+        feedforward_dim: 2048
+        ffn_dropout: 0.0
+        num_feature_levels: ${..num_feature_levels}
+        num_heads: 8
+        num_layers: 6
+        post_norm: false
+        use_act_checkpoint: true
+        vl_layer: {_target_: ape.layers.VisionLanguageFusion, clamp_max_for_overflow: true, clamp_min_for_underflow: true, drop_path: 0.0, dropout: 0.1, embed_dim: 2048, init_values: 0.16666666666666666, l_dim: '${....embed_dim_language}', num_heads: 8, stable_softmax_2d: true, use_checkpoint: true, v_dim: '${....embed_dim}'}
+      num_feature_levels: 5
+      proposal_ambiguous: 1
+      two_stage_num_proposals: ${..num_queries}
+    vis_period: 5120
+    with_box_refine: true
+optimizer:
+  _target_: torch.optim.AdamW
+  betas: [0.9, 0.999]
+  lr: 0.0002
+  params:
+    _target_: detectron2.solver.get_default_optimizer_params
+    base_lr: ${..lr}
+    lr_factor_func: !!python/name:detectron2._cfg_loader8c96.ape_deta_vitl_eva02_lsj1024_cp_12ep.py.%3Clambda%3E ''
+    overrides:
+      pos_embed: {weight_decay: 0.0}
+  weight_decay: 0.05
+train:
+  amp: {enabled: true}
+  checkpointer: {max_to_keep: 2, period: 5000}
+  clip_grad:
+    enabled: true
+    params: {max_norm: 0.1, norm_type: 2}
+  ddp: {broadcast_buffers: false, find_unused_parameters: false, fp16_compression: true}
+  device: cuda
+  eval_period: 1080000
+  fast_dev_run: {enabled: false}
+  init_checkpoint: weights/APE/configs/LVISCOCOCOCOSTUFF_O365_OID_VGR_SA1B_REFCOCO_GQA_PhraseCut_Flickr30k/ape_deta/ape_deta_vitl_eva02_clip_vlf_lsj1024_cp_16x4_1080k_mdl_20230829_162438/model_final.pth
+  iter_loop: false
+  iter_size: 4
+  log_period: 20
+  max_iter: 1080000
+  model_ema: {decay: 0.999, device: '', enabled: false, use_ema_weights_for_eval_only: false}
+  output_dir: output/configs/LVISCOCOCOCOSTUFF_O365_OID_VGR_SA1B_REFCOCO_GQA_PhraseCut_Flickr30k/ape_deta/ape_deta_vitl_eva02_clip_vlf_lsj1024_cp_16x4_1080k
+  seed: -1
+  wandb:
+    enabled: false
+    params: {dir: ./wandb_output, name: detrex_experiment, project: detrex}

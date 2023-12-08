@@ -155,7 +155,7 @@ class DeformableDETRSegmVL(DeformableDETR):
                 torch.Tensor(1, 1, self.embed_dim_language)
             )
             nn.init.normal_(self.name_prompt_fusion_feature)
-        elif name_prompt_fusion_type == "zero":
+        elif name_prompt_fusion_type == "zero":  # True
             self.name_prompt_fusion_feature = nn.Parameter(
                 torch.zeros(1, 1, self.embed_dim_language), requires_grad=False
             )
@@ -164,7 +164,8 @@ class DeformableDETRSegmVL(DeformableDETR):
 
     def forward(self, batched_inputs, do_postprocess=True):
         if self.training:
-            if "dataset_id" in batched_inputs[0]:
+            if "dataset_id" in batched_inputs[0]:  # 一个 batch 内只能有同一种类型数据，也就是说必须是同一个 dataset 的数据
+                # MultiDatasetAspectRatioGroupedDataset 里面处理的
                 dataset_ids = [x["dataset_id"] for x in batched_inputs]
                 assert len(set(dataset_ids)) == 1, dataset_ids
                 dataset_id = dataset_ids[0]
@@ -172,8 +173,9 @@ class DeformableDETRSegmVL(DeformableDETR):
                 dataset_id = 0
         else:
             dataset_id = self.eval_dataset_id
-
+        # demo 推理时候 dataset_id 为 -1，从而 prompt 为 text
         if dataset_id >= 0:
+            # dataset_prompts: [name, name, name, phrase, name, phrase, phrase, phrase, phrase, expression]
             prompt = self.dataset_prompts[dataset_id]
         elif "prompt" in batched_inputs[0]:
             prompt = batched_inputs[0]["prompt"]
@@ -194,10 +196,12 @@ class DeformableDETRSegmVL(DeformableDETR):
         if self.select_box_nums_for_evaluation_list is not None:
             self.test_topk_per_image = self.select_box_nums_for_evaluation_list[dataset_id]
 
+        # phrase 和 expression 的区别是啥？ 看样子没有区别
         if self.training and prompt == "phrase":
             gt_num = torch.tensor([len(input["instances"]) for input in batched_inputs]).to(
                 self.device
             )
+            # 如果是 phrase 或者 exp，那么类别就是累加就行，类似类别重映射，ovd 不需要映射
             gt_classes = torch.arange(gt_num.sum()).to(self.device)
             gt_cumsum = torch.cumsum(gt_num, dim=0).to(self.device)
             for i, input in enumerate(batched_inputs):
@@ -217,14 +221,16 @@ class DeformableDETRSegmVL(DeformableDETR):
                 else:
                     input["instances"].gt_classes = gt_classes[gt_cumsum[i - 1] : gt_cumsum[i]]
 
-                if not self.expression_cumulative_gt_class:
+                if not self.expression_cumulative_gt_class:  # false
                     input["instances"].gt_classes *= 0
 
-        if prompt == "text":
+        if prompt == "text":  # xxxx 专门用于 demo 推理用的
             texts = [x["text_prompt"] for x in batched_inputs]
             text_promp_text_list = [x.strip() for x in ",".join(texts).split(",")]
             text_promp_text_list = [x for x in text_promp_text_list if len(x) > 0]
 
+            # 如果有 a b 这种说明是 phrase，否则就是 ovd, 好像有点不鲁棒，因为 lvis 里面有 a b 的类别吧
+            # 上述做法没有问题，因为训练时候不同数据是会指定 prompt 的，不会走这个分支
             if any([True if x.count(" ") >= 1 else False for x in text_promp_text_list]):
                 prompt = "phrase"
             else:
@@ -232,28 +238,31 @@ class DeformableDETRSegmVL(DeformableDETR):
         else:
             text_promp_text_list = None
 
-        if prompt == "name":
-            if text_promp_text_list:
+        if prompt == "name":  # ovd
+            if text_promp_text_list:  # 不知道啥时候用，推理时候？
                 text_list = text_promp_text_list
                 cache = False
             elif dataset_id >= 0:
                 text_list = get_text_list(
                     self.metadata_list[dataset_id], self.dataset_entities[dataset_id]
                 )
-                cache = True
+                cache = True  # 对 ovd 类别的文本特征进行缓存，下次无需再计算
             else:
                 text_list = []
                 for metadata, dataset_entity in zip(self.metadata_list, self.dataset_entities):
                     text_list += get_text_list(metadata, dataset_entity)
                 text_list = text_list[:1203+365+601]
                 cache = True
-
+                # 训练 coco 分割模型？
                 from detectron2.data.catalog import MetadataCatalog
                 metadata = MetadataCatalog.get("coco_2017_train_panoptic_separated")
                 text_list = get_text_list(metadata, "thing+stuff")
 
+            # 没有 batch 的概念
+            # 如果类别始终相同，文本是不训练的，所以可以缓存
             outputs_l = self.model_language.forward_text(text_list, cache=cache)
-            if "last_hidden_state_eot" in outputs_l:
+            if "last_hidden_state_eot" in outputs_l:  # true
+                # 不需要额外的 avg 操作，只取 eos 的输出特征即可
                 features_l = outputs_l["last_hidden_state_eot"]
             else:
                 features_l = text_utils.reduce_language_feature(
@@ -268,7 +277,7 @@ class DeformableDETRSegmVL(DeformableDETR):
                 and self.dataset_entities[dataset_id] == "stuff"
                 and self.metadata_list[dataset_id].get("stuff_classes")[0] == "things"
                 and not self.stuff_dataset_learn_thing
-            ):
+            ): # false
                 features_l[0, :] *= 0
                 if self.training:
                     for i, input in enumerate(batched_inputs):
@@ -287,10 +296,11 @@ class DeformableDETRSegmVL(DeformableDETR):
             elif prompt == "expression":
                 text_list = [xx for x in batched_inputs for xx in x["expressions"]]
 
-            outputs_l = self.model_language.forward_text(text_list)
+            outputs_l = self.model_language.forward_text(text_list)  # 不能缓存
 
-            if self.text_feature_reduce_before_fusion:
+            if self.text_feature_reduce_before_fusion:  # true
                 if "last_hidden_state_eot" in outputs_l:
+                    # 特征聚合好像没有生效，已经是 eos 了
                     features_l = outputs_l["last_hidden_state_eot"]
                 else:
                     features_l = text_utils.reduce_language_feature(
@@ -305,25 +315,35 @@ class DeformableDETRSegmVL(DeformableDETR):
                     and not self.text_feature_bank_reset
                     and dataset_id >= 0
                     and dataset_id < len(self.metadata_list)
-                ):
+                ):  # true
+                    # ovd 没有这个，这个是用于生成负样本的
+                    # 当前特征和 bank 特征拼接， bank 特征是一个 (数据集格式，最大类别数，1024) 的矩阵
                     features_l = torch.cat(
                         [features_l, self.features_phrase_bank[dataset_id]], dim=0
                     )
+                    # 只提取当前类别的就行 (256,1024) 多的不要，但是要保证新的特征要保存起来
+                    # 这样就可以去到很多负样本了
                     features_l = features_l[
                         : max(len(text_list), self.criterion[dataset_id].num_classes)
                     ]
+                    # 256 个特征全部缓存
                     self.features_phrase_bank[
                         dataset_id, : self.criterion[dataset_id].num_classes
                     ] = features_l[: self.criterion[dataset_id].num_classes]
-                elif self.text_feature_bank and self.text_feature_bank_reset:
+                elif self.text_feature_bank and self.text_feature_bank_reset:  # ture，推理时候
+                    # 4+1256= (1260,1024)
+                    # text_feature_bank_reset 表示不用 bank
                     features_l = torch.cat(
                         [features_l, self.features_phrase_bank[dataset_id] * 0], dim=0
                     )
+                    # (256,1024) 拼接的特征是全0，等于没有，推理时候用。
+                    # 只提取当前类别的就行 (256,1024) 多的不要
                     features_l = features_l[
                         : max(len(text_list), self.criterion[dataset_id].num_classes)
                     ]
 
                 if self.text_feature_batch_repeat:
+                    # 转换为 batch 维度 (1,256,1024)
                     features_l = features_l.unsqueeze(0).repeat(len(batched_inputs), 1, 1)
                 else:
                     features_l = features_l.unsqueeze(1)
@@ -331,24 +351,24 @@ class DeformableDETRSegmVL(DeformableDETR):
                 features_l = outputs_l["last_hidden_state"]
                 attention_mask_l = outputs_l["attention_mask"]
 
-        if prompt == "name":
+        if prompt == "name":  # 没有 bank，处理就更简单了
             if (
                 self.name_prompt_fusion_text is not None
                 and self.name_prompt_fusion_text[dataset_id]
             ):
                 features_l_fusion = features_l
             else:
-                if self.name_prompt_fusion_feature is not None:
+                if self.name_prompt_fusion_feature is not None:  # true
                     features_l_fusion = self.name_prompt_fusion_feature.repeat(
                         len(batched_inputs), 1, 1
-                    )
+                    )  # 全0的参数，不训练，只是为了训练不报错
                 else:
                     features_l_fusion = None
             attention_mask_l_fusion = None
-        elif prompt == "phrase" or prompt == "expression":
+        elif prompt == "phrase" or prompt == "expression":  # true
             features_l_fusion = features_l
             attention_mask_l_fusion = attention_mask_l
-            if self.name_prompt_fusion_feature is not None:
+            if self.name_prompt_fusion_feature is not None:  # name_prompt_fusion_feature 只是用于 name，因此这不需要
                 features_l_fusion += 0.0 * self.name_prompt_fusion_feature
 
         start_time = time.perf_counter()
@@ -407,7 +427,7 @@ class DeformableDETRSegmVL(DeformableDETR):
         else:
             multi_level_masks_prompt = None
 
-        query_embeds = None
+        query_embeds = None # true
         if not self.as_two_stage:
             query_embeds = self.query_embedding.weight
 
@@ -425,7 +445,7 @@ class DeformableDETRSegmVL(DeformableDETR):
             multi_level_feats,
             multi_level_masks,
             multi_level_position_embeddings,
-            query_embeds,
+            query_embeds,  # none
             features_l_fusion,
             attention_mask_l_fusion,
             multi_level_masks_prompt,
@@ -434,12 +454,12 @@ class DeformableDETRSegmVL(DeformableDETR):
 
         mask_features = self.maskdino_mask_features(memory, features, multi_level_masks)
 
-        if prompt == "name":
+        if prompt == "name":  # 如果是 ovd 则不需要融合，直接取融合前的特征就行
             features_l = 1.0 * features_l + 0.0 * features_l_fusion
-        elif prompt == "phrase" or prompt == "expression":
+        elif prompt == "phrase" or prompt == "expression":  # 取融合后特征
             features_l = 0.0 * features_l + 1.0 * features_l_fusion
 
-            if not self.text_feature_reduce_before_fusion:
+            if not self.text_feature_reduce_before_fusion: # false
                 features_l = text_utils.reduce_language_feature(
                     features_l, attention_mask_l, reduce_type=self.text_feature_reduce_type
                 )
@@ -485,7 +505,7 @@ class DeformableDETRSegmVL(DeformableDETR):
             elif prompt == "phrase" or prompt == "expression":
                 outputs_class = self.class_embed[lvl](inter_states[lvl], features_l)
             else:
-                outputs_class = self.class_embed[lvl](inter_states[lvl])
+                outputs_class = self.class_embed[lvl](inter_states[lvl])  # 这个应该没用
             tmp = self.bbox_embed[lvl](inter_states[lvl])
             if reference.shape[-1] == 4:
                 tmp += reference
@@ -543,6 +563,7 @@ class DeformableDETRSegmVL(DeformableDETR):
             gt_instances = [x["instances"].to(self.device) for x in batched_inputs]
             targets = self.prepare_targets(gt_instances)
 
+            # 只计算当前数据集的损失
             loss_dict = self.criterion[dataset_id](output, targets)
 
             weight_dict = self.criterion[dataset_id].weight_dict

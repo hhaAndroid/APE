@@ -4,6 +4,7 @@ import json
 
 from tqdm import tqdm
 
+# 给标注增加每个类别的图片总数和每个类别的实例总数，方便后面训练
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--json_path", default="json_datasets/lvis/lvis_v1_train.json")
@@ -21,8 +22,8 @@ if __name__ == "__main__":
     instance_count = {x["id"]: 0 for x in categories}
     for x in tqdm(json_data["annotations"]):
         if "category_id" in x and x["category_id"] in image_count:
-            image_count[x["category_id"]].add(x["image_id"])
-            instance_count[x["category_id"]] += 1
+            image_count[x["category_id"]].add(x["image_id"])  # 统计每个类别的图片总数
+            instance_count[x["category_id"]] += 1  # 统计每个类别的实例总数
 
     num_freqs = {x: 0 for x in ["r", "f", "c"]}
     for x in categories:

@@ -83,6 +83,7 @@ class DefaultPredictor:
                 # whether the model expects BGR inputs or RGB
                 original_image = original_image[:, :, ::-1]
             height, width = original_image.shape[:2]
+            # {_target_: detectron2.data.transforms.ResizeShortestEdge, max_size: 1024, short_edge_length: 1024}
             image = self.aug.get_transform(original_image).apply_image(original_image)
             image = torch.as_tensor(image.astype("float32").transpose(2, 0, 1))
 

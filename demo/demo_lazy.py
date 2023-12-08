@@ -127,6 +127,7 @@ if __name__ == "__main__":
     logger.info("Arguments: " + str(args))
 
     cfg = setup_cfg(args)
+    LazyConfig.save(cfg, 'ape_d.yaml')
 
     if args.video_input:
         demo = VisualizationDemo(cfg, parallel=True, args=args)
